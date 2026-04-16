@@ -98,7 +98,7 @@ def apriltag_worker(
             "has_frame": True,
             "fps": current_fps,
             "tag_count": len(image_observations),
-            "tag_ids": [x.tag_id for x in image_observations],
+            "tag_ids": [int(x.tag_id) for x in image_observations],
             "solve_type": None,
             "error": None,
             "pose": None,
@@ -120,15 +120,15 @@ def apriltag_worker(
             telemetry["solve_type"] = (
                 "single" if camera_pose_observation.pose_1 is not None else "multi"
             )
-            telemetry["error"] = camera_pose_observation.error_0
+            telemetry["error"] = float(camera_pose_observation.error_0)
             rot = pose.rotation()
             telemetry["pose"] = {
-                "x": pose.translation().X(),
-                "y": pose.translation().Y(),
-                "z": pose.translation().Z(),
-                "roll": math.degrees(rot.X()),
-                "pitch": math.degrees(rot.Y()),
-                "yaw": math.degrees(rot.Z()),
+                "x": float(pose.translation().X()),
+                "y": float(pose.translation().Y()),
+                "z": float(pose.translation().Z()),
+                "roll": float(math.degrees(rot.X())),
+                "pitch": float(math.degrees(rot.Y())),
+                "yaw": float(math.degrees(rot.Z())),
             }
 
         # Include tag layout positions for the 2D field map
