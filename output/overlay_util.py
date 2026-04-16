@@ -109,41 +109,6 @@ def overlay_image_observation(
         for i in range(4):
             cv2.line(image, tuple(front_pts[i]), tuple(back_pts[i]), (0, 255, 0), 1)
 
-        # Snap to floor: draw lines from bottom corners down to the ground plane
-        tag_layout = config_store.remote_config.tag_layout
-        if tag_layout is not None:
-            tag_height = None
-            for tag_data in tag_layout.get("tags", []):
-                if tag_data["ID"] == observation.tag_id:
-                    tag_height = tag_data["pose"]["translation"]["z"]
-                    break
-            if tag_height is not None and tag_height > half:
-                # In tag local frame, Y is up. Tag bottom edge is at Y=-half.
-                # Floor is at Y = -tag_height (tag_height below tag center).
-                floor_y = -tag_height
-                floor_points_3d = numpy.array(
-                    [
-                        [-half, floor_y, 0.0],
-                        [half, floor_y, 0.0],
-                    ],
-                    dtype=numpy.float64,
-                )
-                floor_img_points, _ = cv2.projectPoints(
-                    floor_points_3d,
-                    rvec,
-                    tvec,
-                    config_store.local_config.camera_matrix,
-                    config_store.local_config.distortion_coefficients,
-                )
-                floor_pts = floor_img_points.reshape(-1, 2).astype(int)
-
-                # Bottom corners of the tag are indices 2 and 3
-                # (corners order: TL, TR, BR, BL -> indices 2=BR, 3=BL)
-                cv2.line(image, tuple(front_pts[3]), tuple(floor_pts[0]), (0, 200, 255), 1)
-                cv2.line(image, tuple(front_pts[2]), tuple(floor_pts[1]), (0, 200, 255), 1)
-                # Floor edge
-                cv2.line(image, tuple(floor_pts[0]), tuple(floor_pts[1]), (0, 200, 255), 1)
-
         # Draw axis at center
         cv2.drawFrameAxes(
             image,
