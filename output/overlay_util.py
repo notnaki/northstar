@@ -22,9 +22,13 @@ def overlay_image_observation(
     observation: FiducialImageObservation,
     config_store: ConfigStore = None,
 ) -> None:
-    cv2.aruco.drawDetectedMarkers(
-        image, numpy.array([observation.corners]), numpy.array([observation.tag_id])
-    )
+    # Draw tag outline with thicker lines
+    corners = observation.corners.reshape(4, 2).astype(int)
+    for i in range(4):
+        cv2.line(image, tuple(corners[i]), tuple(corners[(i + 1) % 4]), (0, 255, 0), 3)
+    # Draw tag ID
+    center = corners.mean(axis=0).astype(int)
+    cv2.putText(image, str(observation.tag_id), tuple(center), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
     # Draw 3D axes if calibration is available
     if (
