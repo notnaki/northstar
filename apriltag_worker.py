@@ -65,5 +65,5 @@ def apriltag_worker(
         )
         if stream_server.get_client_count() > 0:
             image = image.copy()
-            [overlay_image_observation(image, x) for x in image_observations]
+            [overlay_image_observation(image, x, config) for x in image_observations]
             stream_server.set_frame(image)
