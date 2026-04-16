@@ -91,12 +91,15 @@ class DefaultCapture(Capture):
                 cv2.CAP_PROP_AUTO_EXPOSURE,
                 config_store.remote_config.camera_auto_exposure,
             )
-            self._video.set(
-                cv2.CAP_PROP_EXPOSURE, config_store.remote_config.camera_exposure
-            )
-            self._video.set(
-                cv2.CAP_PROP_GAIN, int(config_store.remote_config.camera_gain)
-            )
+            # Only set manual exposure/gain when auto-exposure is off
+            # On macOS, setting CAP_PROP_EXPOSURE after enabling auto can override it
+            if config_store.remote_config.camera_auto_exposure != 3:
+                self._video.set(
+                    cv2.CAP_PROP_EXPOSURE, config_store.remote_config.camera_exposure
+                )
+                self._video.set(
+                    cv2.CAP_PROP_GAIN, int(config_store.remote_config.camera_gain)
+                )
 
         self._last_config = config_store
 
