@@ -5,7 +5,9 @@
 # license that can be found in the LICENSE file at
 # the root directory of this project.
 
+import math
 import queue
+import time
 from typing import List, Tuple, Union
 
 import cv2
@@ -46,6 +48,10 @@ def apriltag_worker(
     stream_server = MjpegServer()
     stream_server.start(server_port)
 
+    frame_count = 0
+    last_fps_time = time.time()
+    current_fps = 0
+
     while True:
         sample = q_in.get()
         timestamp: float = sample[0]
@@ -78,6 +84,48 @@ def apriltag_worker(
                 demo_pose_observation,
             )
         )
+
+        # Update FPS counter
+        frame_count += 1
+        now = time.time()
+        if now - last_fps_time >= 1.0:
+            current_fps = frame_count
+            frame_count = 0
+            last_fps_time = now
+
+        # Build telemetry for the dashboard
+        telemetry = {
+            "has_frame": True,
+            "fps": current_fps,
+            "tag_count": len(image_observations),
+            "tag_ids": [x.tag_id for x in image_observations],
+            "solve_type": None,
+            "error": None,
+            "pose": None,
+            "config": {
+                "device_id": config.local_config.device_id,
+                "camera_id": config.remote_config.camera_id,
+                "resolution": f"{config.remote_config.camera_resolution_width}x{config.remote_config.camera_resolution_height}" if config.remote_config.camera_resolution_width > 0 else None,
+                "exposure": config.remote_config.camera_exposure,
+                "gain": config.remote_config.camera_gain,
+                "tag_size": config.remote_config.fiducial_size_m,
+            },
+        }
+        if camera_pose_observation is not None:
+            pose = camera_pose_observation.pose_0
+            telemetry["solve_type"] = "single" if camera_pose_observation.pose_1 is not None else "multi"
+            telemetry["error"] = camera_pose_observation.error_0
+            rot = pose.rotation()
+            telemetry["pose"] = {
+                "x": pose.translation().X(),
+                "y": pose.translation().Y(),
+                "z": pose.translation().Z(),
+                "roll": math.degrees(rot.X()),
+                "pitch": math.degrees(rot.Y()),
+                "yaw": math.degrees(rot.Z()),
+            }
+        stream_server.set_telemetry(telemetry)
+
         if stream_server.get_client_count() > 0:
             image = image.copy()
             [overlay_image_observation(image, x, config) for x in image_observations]

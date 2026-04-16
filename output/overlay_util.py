@@ -28,7 +28,15 @@ def overlay_image_observation(
         cv2.line(image, tuple(corners[i]), tuple(corners[(i + 1) % 4]), (0, 255, 0), 3)
     # Draw tag ID
     center = corners.mean(axis=0).astype(int)
-    cv2.putText(image, str(observation.tag_id), tuple(center), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+    cv2.putText(
+        image,
+        str(observation.tag_id),
+        tuple(center),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.6,
+        (0, 255, 0),
+        2,
+    )
 
     # Draw 3D axes if calibration is available
     if (
