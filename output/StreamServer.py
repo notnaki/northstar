@@ -56,7 +56,7 @@ class MjpegServer(StreamServer):
     --red: #ef4444; --blue: #3b82f6; --yellow: #eab308;
   }
   body { background: var(--bg); color: var(--text); font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace; font-size: 13px; height: 100vh; overflow: hidden; }
-  .layout { display: grid; grid-template-columns: 1fr 280px; grid-template-rows: 48px 1fr; height: 100vh; }
+  .layout { display: grid; grid-template-columns: 1fr 280px; grid-template-rows: 48px 1fr auto; height: 100vh; }
   .topbar { grid-column: 1 / -1; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 16px; gap: 12px; }
   .topbar .logo { font-size: 15px; font-weight: 700; letter-spacing: 0.5px; color: var(--accent); }
   .topbar .logo span { color: var(--dim); font-weight: 400; }
@@ -67,7 +67,9 @@ class MjpegServer(StreamServer):
   .feed { position: relative; background: #000; overflow: hidden; display: flex; align-items: center; justify-content: center; }
   .feed img { max-width: 100%; max-height: 100%; object-fit: contain; }
   .feed .no-feed { color: var(--dim); font-size: 14px; }
-  .sidebar { background: var(--surface); border-left: 1px solid var(--border); overflow-y: auto; padding: 0; }
+  .field-wrap { grid-column: 1; background: var(--surface); border-top: 1px solid var(--border); padding: 10px; display: flex; align-items: center; justify-content: center; }
+  .field-wrap canvas { border: 1px solid var(--border); border-radius: 4px; }
+  .sidebar { grid-column: 2; grid-row: 2 / 4; background: var(--surface); border-left: 1px solid var(--border); overflow-y: auto; padding: 0; }
   .section { border-bottom: 1px solid var(--border); }
   .section-header { padding: 10px 14px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.2px; color: var(--dim); background: var(--bg); }
   .section-body { padding: 8px 14px 12px; }
@@ -80,6 +82,7 @@ class MjpegServer(StreamServer):
   .row .value.yellow { color: var(--yellow); }
   .tag-list { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
   .tag-badge { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 2px 8px; font-size: 12px; font-weight: 500; }
+  .tag-badge.seen { border-color: var(--accent); color: var(--accent); }
   .pose-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; margin-top: 6px; }
   .pose-cell { background: var(--bg); border-radius: 4px; padding: 6px; text-align: center; }
   .pose-cell .axis { font-size: 10px; font-weight: 600; color: var(--dim); margin-bottom: 2px; }
@@ -89,6 +92,7 @@ class MjpegServer(StreamServer):
   .pose-cell .val.z { color: var(--blue); }
   .config-row { padding: 3px 0; color: var(--dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .config-row span { color: var(--text); }
+  .no-layout { color: var(--dim); font-size: 11px; text-align: center; padding: 8px 0; }
 </style>
 </head>
 <body>
@@ -104,6 +108,9 @@ class MjpegServer(StreamServer):
     <img src="stream.mjpg" id="feedImg" onerror="this.style.display='none'" onload="this.style.display='block'" />
     <div class="no-feed" id="noFeed">NO CAMERA FEED</div>
   </div>
+  <div class="field-wrap">
+    <canvas id="fieldCanvas" width="580" height="290"></canvas>
+  </div>
   <div class="sidebar">
     <div class="section">
       <div class="section-header">Detection</div>
@@ -117,6 +124,7 @@ class MjpegServer(StreamServer):
     <div class="section">
       <div class="section-header">Camera Pose (field)</div>
       <div class="section-body">
+        <div id="poseStatus"></div>
         <div class="pose-grid">
           <div class="pose-cell"><div class="axis">X</div><div class="val x" id="poseX">--</div></div>
           <div class="pose-cell"><div class="axis">Y</div><div class="val y" id="poseY">--</div></div>
@@ -149,6 +157,92 @@ const noFeed = $('noFeed');
 feedImg.addEventListener('load', () => { noFeed.style.display = 'none'; });
 feedImg.addEventListener('error', () => { noFeed.style.display = 'block'; });
 
+const canvas = $('fieldCanvas');
+const ctx = canvas.getContext('2d');
+
+function drawField(data) {
+  const W = canvas.width, H = canvas.height;
+  const pad = 20;
+  const fL = data.field_length || 16.54;
+  const fW = data.field_width || 8.21;
+  const scale = Math.min((W - pad * 2) / fL, (H - pad * 2) / fW);
+  const ox = (W - fL * scale) / 2;
+  const oy = (H - fW * scale) / 2;
+  function tx(x) { return ox + x * scale; }
+  function ty(y) { return oy + (fW - y) * scale; }
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Field background
+  ctx.fillStyle = '#111';
+  ctx.fillRect(0, 0, W, H);
+
+  // Field outline
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(tx(0), ty(fW), fL * scale, fW * scale);
+
+  // Center line
+  ctx.strokeStyle = '#222';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(tx(fL / 2), ty(fW));
+  ctx.lineTo(tx(fL / 2), ty(0));
+  ctx.stroke();
+
+  // Tag poses
+  const seenIds = new Set(data.tag_ids || []);
+  if (data.tag_poses) {
+    data.tag_poses.forEach(t => {
+      const sx = tx(t.x), sy = ty(t.y);
+      const seen = seenIds.has(t.id);
+      ctx.fillStyle = seen ? '#22c55e' : '#555';
+      ctx.beginPath();
+      ctx.arc(sx, sy, seen ? 5 : 3.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = seen ? '#22c55e' : '#444';
+      ctx.font = '9px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(t.id, sx, sy - 7);
+    });
+  }
+
+  // Camera pose
+  if (data.pose) {
+    const cx = tx(data.pose.x), cy = ty(data.pose.y);
+    const yaw = -data.pose.yaw * Math.PI / 180;
+    // Camera triangle
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(yaw);
+    ctx.fillStyle = '#3b82f6';
+    ctx.globalAlpha = 0.9;
+    ctx.beginPath();
+    ctx.moveTo(10, 0);
+    ctx.lineTo(-6, -6);
+    ctx.lineTo(-6, 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 0.3;
+    // FOV wedge
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, 30, -0.5, 0.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  // No layout message
+  if (!data.tag_poses) {
+    ctx.fillStyle = '#555';
+    ctx.font = '12px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('no tag layout from NT', W / 2, H / 2);
+  }
+}
+
 async function poll() {
   try {
     const r = await fetch('/api/status');
@@ -160,16 +254,29 @@ async function poll() {
     $('tagCount').className = 'value ' + (d.tag_count > 0 ? 'green' : '');
     $('solveType').textContent = d.solve_type || '--';
     $('solveType').className = 'value ' + (d.solve_type === 'multi' ? 'green' : d.solve_type === 'single' ? 'yellow' : '');
-    $('reprojError').textContent = d.error !== null ? d.error.toFixed(4) : '--';
+    $('reprojError').textContent = d.error !== null && d.error !== undefined ? d.error.toFixed(4) : '--';
+
+    // Tag badges — highlight seen tags
     const tl = $('tagList'); tl.innerHTML = '';
-    (d.tag_ids || []).forEach(id => { const b = document.createElement('span'); b.className = 'tag-badge'; b.textContent = 'ID ' + id; tl.appendChild(b); });
+    (d.tag_ids || []).forEach(id => { const b = document.createElement('span'); b.className = 'tag-badge seen'; b.textContent = 'ID ' + id; tl.appendChild(b); });
+
+    // Pose status
+    const ps = $('poseStatus');
+    if (!d.tag_poses) {
+      ps.innerHTML = '<div class="no-layout">no tag layout from NT — pose unavailable</div>';
+    } else if (!d.pose) {
+      ps.innerHTML = '<div class="no-layout">no tags detected</div>';
+    } else {
+      ps.innerHTML = '';
+    }
+
     if (d.pose) {
       $('poseX').textContent = d.pose.x.toFixed(3);
       $('poseY').textContent = d.pose.y.toFixed(3);
       $('poseZ').textContent = d.pose.z.toFixed(3);
-      $('poseRoll').textContent = d.pose.roll.toFixed(1) + '°';
-      $('posePitch').textContent = d.pose.pitch.toFixed(1) + '°';
-      $('poseYaw').textContent = d.pose.yaw.toFixed(1) + '°';
+      $('poseRoll').textContent = d.pose.roll.toFixed(1) + String.fromCharCode(176);
+      $('posePitch').textContent = d.pose.pitch.toFixed(1) + String.fromCharCode(176);
+      $('poseYaw').textContent = d.pose.yaw.toFixed(1) + String.fromCharCode(176);
     } else {
       ['poseX','poseY','poseZ','poseRoll','posePitch','poseYaw'].forEach(id => $(id).textContent = '--');
     }
@@ -181,6 +288,7 @@ async function poll() {
       $('cfgGain').textContent = d.config.gain ?? '--';
       $('cfgTagSize').textContent = d.config.tag_size ? (d.config.tag_size * 100).toFixed(1) + ' cm' : '--';
     }
+    drawField(d);
   } catch(e) {}
 }
 setInterval(poll, 200);
@@ -211,7 +319,9 @@ poll();
                     self.send_header("Age", "0")
                     self.send_header("Cache-Control", "no-cache, private")
                     self.send_header("Pragma", "no-cache")
-                    self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=FRAME")
+                    self.send_header(
+                        "Content-Type", "multipart/x-mixed-replace; boundary=FRAME"
+                    )
                     self.end_headers()
                     try:
                         CLIENT_COUNTS[uuid] += 1
@@ -231,7 +341,11 @@ poll();
                                 self.wfile.write(frame_data)
                                 self.wfile.write(b"\r\n")
                     except Exception as e:
-                        print("Removed streaming client %s: %s", self.client_address, str(e))
+                        print(
+                            "Removed streaming client %s: %s",
+                            self.client_address,
+                            str(e),
+                        )
                     finally:
                         CLIENT_COUNTS[uuid] -= 1
                 else:

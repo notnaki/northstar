@@ -105,7 +105,11 @@ def apriltag_worker(
             "config": {
                 "device_id": config.local_config.device_id,
                 "camera_id": config.remote_config.camera_id,
-                "resolution": f"{config.remote_config.camera_resolution_width}x{config.remote_config.camera_resolution_height}" if config.remote_config.camera_resolution_width > 0 else None,
+                "resolution": (
+                    f"{config.remote_config.camera_resolution_width}x{config.remote_config.camera_resolution_height}"
+                    if config.remote_config.camera_resolution_width > 0
+                    else None
+                ),
                 "exposure": config.remote_config.camera_exposure,
                 "gain": config.remote_config.camera_gain,
                 "tag_size": config.remote_config.fiducial_size_m,
@@ -113,7 +117,9 @@ def apriltag_worker(
         }
         if camera_pose_observation is not None:
             pose = camera_pose_observation.pose_0
-            telemetry["solve_type"] = "single" if camera_pose_observation.pose_1 is not None else "multi"
+            telemetry["solve_type"] = (
+                "single" if camera_pose_observation.pose_1 is not None else "multi"
+            )
             telemetry["error"] = camera_pose_observation.error_0
             rot = pose.rotation()
             telemetry["pose"] = {
@@ -124,6 +130,25 @@ def apriltag_worker(
                 "pitch": math.degrees(rot.Y()),
                 "yaw": math.degrees(rot.Z()),
             }
+
+        # Include tag layout positions for the 2D field map
+        tag_layout = config.remote_config.tag_layout
+        if tag_layout is not None:
+            telemetry["tag_poses"] = [
+                {
+                    "id": t["ID"],
+                    "x": t["pose"]["translation"]["x"],
+                    "y": t["pose"]["translation"]["y"],
+                }
+                for t in tag_layout.get("tags", [])
+            ]
+            telemetry["field_length"] = tag_layout.get("field", {}).get("length", 16.54)
+            telemetry["field_width"] = tag_layout.get("field", {}).get("width", 8.21)
+        else:
+            telemetry["tag_poses"] = None
+            telemetry["field_length"] = 16.54
+            telemetry["field_width"] = 8.21
+
         stream_server.set_telemetry(telemetry)
 
         if stream_server.get_client_count() > 0:
