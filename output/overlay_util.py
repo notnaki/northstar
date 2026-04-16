@@ -10,23 +10,40 @@ from typing import List
 import cv2
 import numpy
 from config.config import ConfigStore
-from vision_types import FiducialImageObservation, FiducialPoseObservation, ObjDetectObservation
+from vision_types import (
+    FiducialImageObservation,
+    FiducialPoseObservation,
+    ObjDetectObservation,
+)
 
 
-def overlay_image_observation(image: cv2.Mat, observation: FiducialImageObservation, config_store: ConfigStore = None) -> None:
-    cv2.aruco.drawDetectedMarkers(image, numpy.array([observation.corners]), numpy.array([observation.tag_id]))
+def overlay_image_observation(
+    image: cv2.Mat,
+    observation: FiducialImageObservation,
+    config_store: ConfigStore = None,
+) -> None:
+    cv2.aruco.drawDetectedMarkers(
+        image, numpy.array([observation.corners]), numpy.array([observation.tag_id])
+    )
 
     # Draw 3D bounding box if calibration is available
-    if config_store is not None and config_store.local_config.has_calibration and config_store.remote_config.fiducial_size_m > 0:
+    if (
+        config_store is not None
+        and config_store.local_config.has_calibration
+        and config_store.remote_config.fiducial_size_m > 0
+    ):
         fid_size = config_store.remote_config.fiducial_size_m
         half = fid_size / 2.0
         # Tag face corners (coplanar, Z=0)
-        object_points = numpy.array([
-            [-half,  half, 0.0],
-            [ half,  half, 0.0],
-            [ half, -half, 0.0],
-            [-half, -half, 0.0],
-        ], dtype=numpy.float64)
+        object_points = numpy.array(
+            [
+                [-half, half, 0.0],
+                [half, half, 0.0],
+                [half, -half, 0.0],
+                [-half, -half, 0.0],
+            ],
+            dtype=numpy.float64,
+        )
 
         try:
             success, rvec, tvec = cv2.solvePnP(
@@ -41,24 +58,34 @@ def overlay_image_observation(image: cv2.Mat, observation: FiducialImageObservat
         except Exception:
             return
 
-        # Project the 3D box: front face (Z=0) + back face (Z=-fid_size)
-        depth = fid_size
-        box_points = numpy.array([
-            # Front face
-            [-half,  half, 0.0],
-            [ half,  half, 0.0],
-            [ half, -half, 0.0],
-            [-half, -half, 0.0],
-            # Back face (extends behind the tag)
-            [-half,  half, -depth],
-            [ half,  half, -depth],
-            [ half, -half, -depth],
-            [-half, -half, -depth],
-        ], dtype=numpy.float64)
+        # Determine which direction is "behind" the tag (away from camera)
+        # by checking the tag's Z-axis direction in camera frame
+        R, _ = cv2.Rodrigues(rvec)
+        tag_normal_in_cam = R @ numpy.array([0.0, 0.0, 1.0])
+        # If tag normal Z < 0, tag faces camera -> behind is +Z in tag frame
+        # If tag normal Z > 0, tag faces away  -> behind is -Z in tag frame
+        depth = fid_size * (1.0 if tag_normal_in_cam[2] < 0 else -1.0)
+
+        box_points = numpy.array(
+            [
+                # Front face
+                [-half, half, 0.0],
+                [half, half, 0.0],
+                [half, -half, 0.0],
+                [-half, -half, 0.0],
+                # Back face (extends behind the tag, away from camera)
+                [-half, half, depth],
+                [half, half, depth],
+                [half, -half, depth],
+                [-half, -half, depth],
+            ],
+            dtype=numpy.float64,
+        )
 
         img_points, _ = cv2.projectPoints(
             box_points,
-            rvec, tvec,
+            rvec,
+            tvec,
             config_store.local_config.camera_matrix,
             config_store.local_config.distortion_coefficients,
         )
@@ -70,7 +97,9 @@ def overlay_image_observation(image: cv2.Mat, observation: FiducialImageObservat
 
         # Draw back face (green, thinner)
         for i in range(4):
-            cv2.line(image, tuple(pts[4 + i]), tuple(pts[4 + (i + 1) % 4]), (0, 255, 0), 1)
+            cv2.line(
+                image, tuple(pts[4 + i]), tuple(pts[4 + (i + 1) % 4]), (0, 255, 0), 1
+            )
 
         # Draw connecting edges (green)
         for i in range(4):
@@ -81,12 +110,15 @@ def overlay_image_observation(image: cv2.Mat, observation: FiducialImageObservat
             image,
             config_store.local_config.camera_matrix,
             config_store.local_config.distortion_coefficients,
-            rvec, tvec,
+            rvec,
+            tvec,
             fid_size * 0.5,
         )
 
 
-def overlay_pose_observation(image: cv2.Mat, config_store: ConfigStore, observation: FiducialPoseObservation) -> None:
+def overlay_pose_observation(
+    image: cv2.Mat, config_store: ConfigStore, observation: FiducialPoseObservation
+) -> None:
     cv2.drawFrameAxes(
         image,
         config_store.local_config.camera_matrix,
@@ -105,7 +137,9 @@ def overlay_pose_observation(image: cv2.Mat, config_store: ConfigStore, observat
     )
 
 
-def overlay_obj_detect_observation(image: cv2.Mat, observation: ObjDetectObservation) -> None:
+def overlay_obj_detect_observation(
+    image: cv2.Mat, observation: ObjDetectObservation
+) -> None:
     cv2.rectangle(
         image,
         (int(observation.corner_pixels[0][0]), int(observation.corner_pixels[0][1])),
@@ -116,7 +150,10 @@ def overlay_obj_detect_observation(image: cv2.Mat, observation: ObjDetectObserva
     cv2.putText(
         image,
         str(round(observation.confidence * 100)) + "%",
-        (int(observation.corner_pixels[0][0]), int(observation.corner_pixels[0][1] - 5)),
+        (
+            int(observation.corner_pixels[0][0]),
+            int(observation.corner_pixels[0][1] - 5),
+        ),
         cv2.FONT_HERSHEY_PLAIN,
         2,
         (0, 0, 225),
@@ -124,13 +161,27 @@ def overlay_obj_detect_observation(image: cv2.Mat, observation: ObjDetectObserva
     )
 
 
-def overlay_circle_obj_detect_observation(image: cv2.Mat, observation: ObjDetectObservation) -> None:
+def overlay_circle_obj_detect_observation(
+    image: cv2.Mat, observation: ObjDetectObservation
+) -> None:
     cv2.ellipse(
         image,
-        (int((observation.corner_pixels[0][0] + observation.corner_pixels[1][0]) / 2),
-         int((observation.corner_pixels[0][1] + observation.corner_pixels[2][1]) / 2)),
-        (int((observation.corner_pixels[1][0] - observation.corner_pixels[0][0]) / 2),
-         int((observation.corner_pixels[2][1] - observation.corner_pixels[0][1]) / 2)),
+        (
+            int(
+                (observation.corner_pixels[0][0] + observation.corner_pixels[1][0]) / 2
+            ),
+            int(
+                (observation.corner_pixels[0][1] + observation.corner_pixels[2][1]) / 2
+            ),
+        ),
+        (
+            int(
+                (observation.corner_pixels[1][0] - observation.corner_pixels[0][0]) / 2
+            ),
+            int(
+                (observation.corner_pixels[2][1] - observation.corner_pixels[0][1]) / 2
+            ),
+        ),
         0,
         180,
         360,
@@ -139,7 +190,9 @@ def overlay_circle_obj_detect_observation(image: cv2.Mat, observation: ObjDetect
     )
 
 
-def overlay_2026_obj_detect_observations(image: cv2.Mat, observations: List[ObjDetectObservation]):
+def overlay_2026_obj_detect_observations(
+    image: cv2.Mat, observations: List[ObjDetectObservation]
+):
     # Render robot boxes
     [overlay_obj_detect_observation(image, x) for x in observations if x.obj_class == 1]
 
@@ -149,7 +202,9 @@ def overlay_2026_obj_detect_observations(image: cv2.Mat, observations: List[ObjD
 
     # Render fuel count
     count_text = str(len(fuel_observations))
-    (text_width, text_height), _ = cv2.getTextSize(count_text, cv2.FONT_HERSHEY_PLAIN, 5, 5)
+    (text_width, text_height), _ = cv2.getTextSize(
+        count_text, cv2.FONT_HERSHEY_PLAIN, 5, 5
+    )
     cv2.putText(
         image,
         count_text,
@@ -157,5 +212,5 @@ def overlay_2026_obj_detect_observations(image: cv2.Mat, observations: List[ObjD
         cv2.FONT_HERSHEY_PLAIN,
         5,
         (255, 255, 225),
-        5
+        5,
     )
