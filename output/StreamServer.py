@@ -61,6 +61,9 @@ class MjpegServer(StreamServer):
   .topbar .logo { font-size: 15px; font-weight: 700; letter-spacing: 0.5px; color: var(--accent); }
   .topbar .logo span { color: var(--dim); font-weight: 400; }
   .topbar .status { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .topbar .nt-badge { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; letter-spacing: 0.5px; }
+  .topbar .nt-badge.connected { background: var(--accent); color: #000; }
+  .topbar .nt-badge.disconnected { background: var(--red); color: #fff; }
   .topbar .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); }
   .topbar .dot.connected { background: var(--accent); }
   .topbar .fps { color: var(--dim); }
@@ -100,6 +103,7 @@ class MjpegServer(StreamServer):
   <div class="topbar">
     <div class="logo">NORTHSTAR <span>// 6328</span></div>
     <div class="status">
+      <span class="nt-badge disconnected" id="ntBadge">NT</span>
       <span class="fps" id="fps">-- fps</span>
       <div class="dot" id="statusDot"></div>
     </div>
@@ -249,6 +253,7 @@ async function poll() {
     if (!r.ok) return;
     const d = await r.json();
     $('statusDot').classList.toggle('connected', d.has_frame);
+    const ntb = $('ntBadge'); ntb.classList.toggle('connected', !!d.nt_connected); ntb.classList.toggle('disconnected', !d.nt_connected);
     $('fps').textContent = (d.fps > 0 ? d.fps + ' fps' : '-- fps');
     $('tagCount').textContent = d.tag_count;
     $('tagCount').className = 'value ' + (d.tag_count > 0 ? 'green' : '');

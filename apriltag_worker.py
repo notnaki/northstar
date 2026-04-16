@@ -11,6 +11,7 @@ import time
 from typing import List, Tuple, Union
 
 import cv2
+import ntcore
 from config.config import ConfigStore
 from output.overlay_util import overlay_image_observation
 from output.StreamServer import MjpegServer
@@ -94,8 +95,10 @@ def apriltag_worker(
             last_fps_time = now
 
         # Build telemetry for the dashboard
+        nt_connected = ntcore.NetworkTableInstance.getDefault().isConnected()
         telemetry = {
             "has_frame": True,
+            "nt_connected": nt_connected,
             "fps": current_fps,
             "tag_count": len(image_observations),
             "tag_ids": [int(x.tag_id) for x in image_observations],
