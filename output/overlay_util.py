@@ -26,7 +26,7 @@ def overlay_image_observation(
         image, numpy.array([observation.corners]), numpy.array([observation.tag_id])
     )
 
-    # Draw 3D bounding box if calibration is available
+    # Draw 3D axes if calibration is available
     if (
         config_store is not None
         and config_store.local_config.has_calibration
@@ -34,7 +34,6 @@ def overlay_image_observation(
     ):
         fid_size = config_store.remote_config.fiducial_size_m
         half = fid_size / 2.0
-        # Tag face corners (coplanar, Z=0)
         object_points = numpy.array(
             [
                 [-half, half, 0.0],
@@ -58,58 +57,6 @@ def overlay_image_observation(
         except Exception:
             return
 
-        # Determine which direction is "behind" the tag (away from camera)
-        # by checking the tag's Z-axis direction in camera frame
-        R, _ = cv2.Rodrigues(rvec)
-        tag_normal_in_cam = R @ numpy.array([0.0, 0.0, 1.0])
-        # If tag normal Z < 0, tag faces camera -> behind is +Z in tag frame
-        # If tag normal Z > 0, tag faces away  -> behind is -Z in tag frame
-        depth = fid_size * (1.0 if tag_normal_in_cam[2] < 0 else -1.0)
-
-        # Use detected 2D corners directly for the front face (no jitter)
-        front_pts = observation.corners.reshape(4, 2).astype(int)
-
-        # Only project the back face through PnP
-        back_points_3d = numpy.array(
-            [
-                [-half, half, depth],
-                [half, half, depth],
-                [half, -half, depth],
-                [-half, -half, depth],
-            ],
-            dtype=numpy.float64,
-        )
-
-        back_img_points, _ = cv2.projectPoints(
-            back_points_3d,
-            rvec,
-            tvec,
-            config_store.local_config.camera_matrix,
-            config_store.local_config.distortion_coefficients,
-        )
-        back_pts = back_img_points.reshape(-1, 2).astype(int)
-
-        # Draw front face (green, locked to detected corners)
-        for i in range(4):
-            cv2.line(
-                image,
-                tuple(front_pts[i]),
-                tuple(front_pts[(i + 1) % 4]),
-                (0, 255, 0),
-                2,
-            )
-
-        # Draw back face (green, thinner)
-        for i in range(4):
-            cv2.line(
-                image, tuple(back_pts[i]), tuple(back_pts[(i + 1) % 4]), (0, 255, 0), 1
-            )
-
-        # Draw connecting edges (green)
-        for i in range(4):
-            cv2.line(image, tuple(front_pts[i]), tuple(back_pts[i]), (0, 255, 0), 1)
-
-        # Draw axis at center
         cv2.drawFrameAxes(
             image,
             config_store.local_config.camera_matrix,
