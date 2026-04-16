@@ -66,14 +66,12 @@ def overlay_image_observation(
         # If tag normal Z > 0, tag faces away  -> behind is -Z in tag frame
         depth = fid_size * (1.0 if tag_normal_in_cam[2] < 0 else -1.0)
 
-        box_points = numpy.array(
+        # Use detected 2D corners directly for the front face (no jitter)
+        front_pts = observation.corners.reshape(4, 2).astype(int)
+
+        # Only project the back face through PnP
+        back_points_3d = numpy.array(
             [
-                # Front face
-                [-half, half, 0.0],
-                [half, half, 0.0],
-                [half, -half, 0.0],
-                [-half, -half, 0.0],
-                # Back face (extends behind the tag, away from camera)
                 [-half, half, depth],
                 [half, half, depth],
                 [half, -half, depth],
@@ -82,28 +80,34 @@ def overlay_image_observation(
             dtype=numpy.float64,
         )
 
-        img_points, _ = cv2.projectPoints(
-            box_points,
+        back_img_points, _ = cv2.projectPoints(
+            back_points_3d,
             rvec,
             tvec,
             config_store.local_config.camera_matrix,
             config_store.local_config.distortion_coefficients,
         )
-        pts = img_points.reshape(-1, 2).astype(int)
+        back_pts = back_img_points.reshape(-1, 2).astype(int)
 
-        # Draw front face (green)
+        # Draw front face (green, locked to detected corners)
         for i in range(4):
-            cv2.line(image, tuple(pts[i]), tuple(pts[(i + 1) % 4]), (0, 255, 0), 2)
+            cv2.line(
+                image,
+                tuple(front_pts[i]),
+                tuple(front_pts[(i + 1) % 4]),
+                (0, 255, 0),
+                2,
+            )
 
         # Draw back face (green, thinner)
         for i in range(4):
             cv2.line(
-                image, tuple(pts[4 + i]), tuple(pts[4 + (i + 1) % 4]), (0, 255, 0), 1
+                image, tuple(back_pts[i]), tuple(back_pts[(i + 1) % 4]), (0, 255, 0), 1
             )
 
         # Draw connecting edges (green)
         for i in range(4):
-            cv2.line(image, tuple(pts[i]), tuple(pts[i + 4]), (0, 255, 0), 1)
+            cv2.line(image, tuple(front_pts[i]), tuple(back_pts[i]), (0, 255, 0), 1)
 
         # Draw axis at center
         cv2.drawFrameAxes(
