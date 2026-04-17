@@ -1,0 +1,18 @@
+{
+  "manager_port": 5800,
+  "publish_streams": true,
+  "server_ip": "127.0.0.1",
+  "stream_ip": "127.0.0.1",
+  "instances": [
+    {
+      "name": "Front Left",
+      "config": "config.json",
+      "calibration": "calibration_new.yml"
+    },
+    {
+      "name": "Front Right",
+      "config": "config_right.json",
+      "calibration": "calibration_right.json"
+    }
+  ]
+}
