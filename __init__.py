@@ -14,7 +14,10 @@ from typing import List, Tuple, Union
 
 import ntcore
 from apriltag_worker import apriltag_worker
-from calibration.CalibrationCommandSource import CalibrationCommandSource, NTCalibrationCommandSource
+from calibration.CalibrationCommandSource import (
+    CalibrationCommandSource,
+    NTCalibrationCommandSource,
+)
 from calibration.CalibrationSession import CalibrationSession
 from config.config import ConfigStore, LocalConfig, RemoteConfig
 from config.ConfigSource import ConfigSource, FileConfigSource, NTConfigSource
@@ -42,14 +45,21 @@ if __name__ == "__main__":
     output_publisher: OutputPublisher = NTOutputPublisher()
     video_writer: VideoWriter = FFmpegVideoWriter()
     calibration_session = CalibrationSession()
-    calibration_session_server: Union[StreamServer, None] = None
+
+    # Create stream server in main thread so both apriltag worker and calibration can use it
+    apriltag_stream_server = MjpegServer(
+        default_fps=config.local_config.stream_fps,
+        default_quality=config.local_config.stream_quality,
+        default_width=config.local_config.stream_width,
+    )
+    apriltag_stream_server.start(config.local_config.apriltags_stream_port)
 
     if config.local_config.apriltags_enable:
         apriltag_worker_in = queue.Queue(maxsize=1)
         apriltag_worker_out = queue.Queue(maxsize=1)
         apriltag_worker = threading.Thread(
             target=apriltag_worker,
-            args=(apriltag_worker_in, apriltag_worker_out, config.local_config.apriltags_stream_port),
+            args=(apriltag_worker_in, apriltag_worker_out, apriltag_stream_server),
             daemon=True,
         )
         apriltag_worker.start()
@@ -59,7 +69,11 @@ if __name__ == "__main__":
         objdetect_worker_out = queue.Queue(maxsize=1)
         objdetect_worker = threading.Thread(
             target=objdetect_worker,
-            args=(objdetect_worker_in, objdetect_worker_out, config.local_config.objdetect_stream_port),
+            args=(
+                objdetect_worker_in,
+                objdetect_worker_out,
+                config.local_config.objdetect_stream_port,
+            ),
             daemon=True,
         )
         objdetect_worker.start()
@@ -105,13 +119,12 @@ if __name__ == "__main__":
             continue
 
         if calibration_command_source.get_calibrating(config):
-            # Calibration mode
-            if not was_calibrating:
-                calibration_session_server = MjpegServer()
-                calibration_session_server.start(7999)
+            # Calibration mode — push frames to the same stream server the manager uses
             was_calibrating = True
-            calibration_session.process_frame(image, calibration_command_source.get_capture_flag(config))
-            calibration_session_server.set_frame(image)
+            calibration_session.process_frame(
+                image, calibration_command_source.get_capture_flag(config)
+            )
+            apriltag_stream_server.set_frame(image)
 
         elif was_calibrating:
             # Finish calibration
@@ -132,7 +145,9 @@ if __name__ == "__main__":
                     effective_max_fps = throttle_fps
                 else:
                     effective_max_fps = min(throttle_fps, apriltag_max_fps)
-                if effective_max_fps < 0 or (timestamp - apriltags_last_frame_time) >= (1.0 / effective_max_fps):
+                if effective_max_fps < 0 or (timestamp - apriltags_last_frame_time) >= (
+                    1.0 / effective_max_fps
+                ):
                     apriltags_last_frame_time = timestamp
                     try:
                         apriltag_worker_in.put((timestamp, image, config), block=False)
@@ -151,7 +166,11 @@ if __name__ == "__main__":
                 else:
                     # Publish observation
                     output_publisher.send_apriltag_observation(
-                        config, timestamp_out, pose_observation, tag_angle_observations, demo_pose_observation
+                        config,
+                        timestamp_out,
+                        pose_observation,
+                        tag_angle_observations,
+                        demo_pose_observation,
                     )
 
                     # Store last observations
@@ -162,8 +181,12 @@ if __name__ == "__main__":
                     apriltags_frame_count += 1
                     if time.time() - apriltags_last_print > 1:
                         apriltags_last_print = time.time()
-                        print("Running AprilTag pipeline at", apriltags_frame_count, "fps")
-                        output_publisher.send_apriltag_fps(config, timestamp_out, apriltags_frame_count)
+                        print(
+                            "Running AprilTag pipeline at", apriltags_frame_count, "fps"
+                        )
+                        output_publisher.send_apriltag_fps(
+                            config, timestamp_out, apriltags_frame_count
+                        )
                         apriltags_frame_count = 0
 
             # Object detection pipeline
@@ -179,7 +202,9 @@ if __name__ == "__main__":
                     effective_max_fps = throttle_fps
                 else:
                     effective_max_fps = min(throttle_fps, obj_max_fps)
-                if effective_max_fps < 0 or (timestamp - objdetect_last_frame_time) >= (1.0 / effective_max_fps):
+                if effective_max_fps < 0 or (timestamp - objdetect_last_frame_time) >= (
+                    1.0 / effective_max_fps
+                ):
                     objdetect_last_frame_time = timestamp
                     try:
                         objdetect_worker_in.put((timestamp, image, config), block=False)
@@ -191,7 +216,9 @@ if __name__ == "__main__":
                     pass
                 else:
                     # Publish observation
-                    output_publisher.send_objdetect_observation(config, timestamp_out, observations)
+                    output_publisher.send_objdetect_observation(
+                        config, timestamp_out, observations
+                    )
 
                     # Store last observations
                     last_objdetect_observations = observations
@@ -201,8 +228,14 @@ if __name__ == "__main__":
                     objdetect_frame_count += 1
                     if time.time() - objdetect_last_print > 1:
                         objdetect_last_print = time.time()
-                        print("Running object detection pipeline at", objdetect_frame_count, "fps")
-                        output_publisher.send_objdetect_fps(config, timestamp, objdetect_frame_count)
+                        print(
+                            "Running object detection pipeline at",
+                            objdetect_frame_count,
+                            "fps",
+                        )
+                        output_publisher.send_objdetect_fps(
+                            config, timestamp, objdetect_frame_count
+                        )
                         objdetect_frame_count = 0
 
             # Save frame to video
@@ -210,7 +243,10 @@ if __name__ == "__main__":
                 if len(video_frame_cache) >= 2:
                     # Delay output by two frames to improve alignment with overlays
                     video_writer.write_frame(
-                        timestamp, video_frame_cache.pop(0), last_image_observations, last_objdetect_observations
+                        timestamp,
+                        video_frame_cache.pop(0),
+                        last_image_observations,
+                        last_objdetect_observations,
                     )
                 video_frame_cache.append(image)
             else:

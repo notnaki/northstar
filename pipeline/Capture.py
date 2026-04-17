@@ -101,7 +101,10 @@ class DefaultCapture(Capture):
                     cv2.CAP_PROP_GAIN, int(config_store.remote_config.camera_gain)
                 )
 
-        self._last_config = config_store
+        self._last_config = ConfigStore(
+            dataclasses.replace(config_store.local_config),
+            dataclasses.replace(config_store.remote_config),
+        )
 
         retval, image = self._video.read()
         return retval, image

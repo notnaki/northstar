@@ -45,6 +45,13 @@ class FileConfigSource(ConfigSource):
             config_store.local_config.apriltags_enable = config_data["apriltags_enable"]
             config_store.local_config.objdetect_enable = config_data["objdetect_enable"]
             config_store.local_config.video_folder = config_data["video_folder"]
+            config_store.local_config.stream_fps = config_data.get("stream_fps", 15)
+            config_store.local_config.stream_quality = config_data.get(
+                "stream_quality", 50
+            )
+            config_store.local_config.stream_width = config_data.get(
+                "stream_width", 320
+            )
 
         # Get calibration
         calibration_store = cv2.FileStorage(

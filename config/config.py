@@ -21,6 +21,9 @@ class LocalConfig:
     apriltag_max_fps: int = -1
     obj_detect_model: str = ""
     obj_detect_max_fps: int = -1
+    stream_fps: int = 15
+    stream_quality: int = 50
+    stream_width: int = 320
     apriltags_enable: bool = False
     objdetect_enable: bool = True
     video_folder: str = ""

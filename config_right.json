@@ -1,8 +1,8 @@
 {
-  "device_id": "northstar_0",
+  "device_id": "northstar_1",
   "server_ip": "127.0.0.1",
-  "apriltags_stream_port": 8000,
-  "objdetect_stream_port": 8001,
+  "apriltags_stream_port": 8002,
+  "objdetect_stream_port": 8003,
   "stream_fps": 15,
   "stream_quality": 50,
   "stream_width": 320,

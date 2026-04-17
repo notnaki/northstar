@@ -40,14 +40,12 @@ def apriltag_worker(
             Union[FiducialPoseObservation, None],
         ]
     ],
-    server_port: int,
+    stream_server: MjpegServer,
 ):
     fiducial_detector = ArucoFiducialDetector(cv2.aruco.DICT_APRILTAG_36h11)
     camera_pose_estimator = MultiTargetCameraPoseEstimator()
     tag_angle_calculator = CameraMatrixTagAngleCalculator()
     tag_pose_estimator = SquareTargetPoseEstimator()
-    stream_server = MjpegServer()
-    stream_server.start(server_port)
 
     frame_count = 0
     last_fps_time = time.time()
@@ -157,4 +155,19 @@ def apriltag_worker(
         if stream_server.get_client_count() > 0:
             image = image.copy()
             [overlay_image_observation(image, x, config) for x in image_observations]
+            fps_text = f"{current_fps} FPS"
+            h, w = image.shape[:2]
+            scale = max(0.6, h / 400.0)
+            thickness = max(1, int(scale * 2))
+            (tw, th), _ = cv2.getTextSize(
+                fps_text, cv2.FONT_HERSHEY_SIMPLEX, scale, thickness
+            )
+            pad = int(8 * scale)
+            cv2.rectangle(
+                image, (0, 0), (tw + 2 * pad, th + 2 * pad), (0, 0, 0), -1
+            )
+            cv2.putText(
+                image, fps_text, (pad, th + pad),
+                cv2.FONT_HERSHEY_SIMPLEX, scale, (0, 255, 0), thickness, cv2.LINE_AA,
+            )
             stream_server.set_frame(image)
