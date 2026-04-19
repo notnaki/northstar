@@ -5,6 +5,8 @@
 # license that can be found in the LICENSE file at
 # the root directory of this project.
 
+from __future__ import annotations
+
 import dataclasses
 import subprocess
 import sys
@@ -12,11 +14,25 @@ import time
 import traceback
 from typing import Tuple, Union
 
-import AVFoundation
 import cv2
 import numpy
 from config.config import ConfigStore
-from pypylon import pylon
+
+try:
+    import AVFoundation
+
+    _HAS_AVFOUNDATION = True
+except ImportError:
+    AVFoundation = None
+    _HAS_AVFOUNDATION = False
+
+try:
+    from pypylon import pylon
+
+    _HAS_PYLON = True
+except ImportError:
+    pylon = None
+    _HAS_PYLON = False
 
 
 class Capture:
@@ -389,12 +405,20 @@ class GStreamerCapture(Capture):
 
 CAPTURE_IMPLS = {
     "": DefaultCapture,
-    "avfoundation": AVFoundationCapture,
-    "pylon": lambda: PylonCapture(),
-    "pylon-flipped": lambda: PylonCapture(is_flipped=True),
-    "pylon-color": lambda: PylonCapture("color"),
-    "pylon-color-flipped": lambda: PylonCapture("color", is_flipped=True),
-    "pylon-cropped": lambda: PylonCapture("cropped"),
-    "pylon-cropped-flipped": lambda: PylonCapture("cropped", is_flipped=True),
     "gstreamer": GStreamerCapture,
 }
+
+if _HAS_AVFOUNDATION:
+    CAPTURE_IMPLS["avfoundation"] = AVFoundationCapture
+
+if _HAS_PYLON:
+    CAPTURE_IMPLS.update(
+        {
+            "pylon": lambda: PylonCapture(),
+            "pylon-flipped": lambda: PylonCapture(is_flipped=True),
+            "pylon-color": lambda: PylonCapture("color"),
+            "pylon-color-flipped": lambda: PylonCapture("color", is_flipped=True),
+            "pylon-cropped": lambda: PylonCapture("cropped"),
+            "pylon-cropped-flipped": lambda: PylonCapture("cropped", is_flipped=True),
+        }
+    )
